@@ -41,11 +41,11 @@ tkdiff:
 # compiles to 4054 bytes on 64-bit kubuntu hardy (to a 32 bit binary)
 smallpt4k: smallpt4k.cpp Makefile
 	$(CPP) -m32 -march=native -O1 -nostdlib -fpeephole2 -ftree-vectorize -fopenmp -ffast-math -fomit-frame-pointer -fno-exceptions -c smallpt4k.cpp
-	ld -dynamic-linker /lib/ld-linux.so.2 smallpt4k.o /usr/local/lib/libgomp.so /lib/libm.so.6 -o usmallpt4k            # 32-bit OS
-#	ld -dynamic-linker /lib32/ld-linux.so.2 smallpt4k.o /usr/lib32/libgomp.so /lib32/libm.so.6 -o usmallpt4k -melf_i386 # 64-bit OS
+#	ld -dynamic-linker /lib/ld-linux.so.2 smallpt4k.o /usr/local/lib/libgomp.so /lib/libm.so.6 -o usmallpt4k            # 32-bit OS
+	ld -dynamic-linker /lib32/ld-linux.so.2 smallpt4k.o /usr/lib32/libgomp.so /lib32/libm.so.6 -o usmallpt4k -melf_i386 # 64-bit OS
 	strip -R .note -R .comment -R .eh_frame -R .eh_frame_hdr -R .gnu.version usmallpt4k
-	./sstrip usmallpt4k         # 32-bit OS
-#	./sstrip32 usmallpt4k       # 64-bit OS
+#	./sstrip usmallpt4k         # 32-bit OS
+	./sstrip32 usmallpt4k       # 64-bit OS
 	echo 'HOME=/tmp/S;cp $$0 ~;tail -n+2 $$0|zcat>~;~;rm ~;exit' > smallpt4k
 	7z a -tgzip -mx=9 -so dummy usmallpt4k >> smallpt4k
 	#gzip -n --best -c usmallpt4k >> smallpt4k

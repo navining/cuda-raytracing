@@ -11,7 +11,8 @@ resources:
 commands:
   build: # commands in the following seciton are executed sequentially
     - /bin/bash -c "cp -r /src/* ."
-    - make smallpt
-    - ./smallpt
+    - cmake /src
+    - make
+    - ./cu_smallpt
     #- ./cuda-program ...
     #- Evaluate accelerated version ...
