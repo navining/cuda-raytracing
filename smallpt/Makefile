@@ -9,6 +9,10 @@ CPP=g++
 CPPFLAGS=-O3 -fopenmp       # Use this for gcc >= 4.2
 #CPPFLAGS=-O3               # Use this for gcc <  4.2
 
+# Cuda compiler
+CUDA=nvcc
+CUDAFLAGS=-O3
+
 ifdef DEBUG
 CPPFLAGS=-g
 endif
@@ -17,11 +21,17 @@ default: all
 
 all: smallpt smallpt4k
 
-smallpt: smallpt.cpp Makefile
-	$(CPP) $(CPPFLAGS) -o smallpt smallpt.cpp 
+smallpt: smallpt.cpp  Makefile
+	$(CPP) -O3 -o smallpt smallpt.cpp 
+
+smallpt-omp: smallpt.cpp  Makefile
+	$(CPP) $(CPPFLAGS) -o smallpt-omp smallpt.cpp 
+
+smallpt-cuda: smallpt.cu  Makefile
+	$(CUDA) $(CUDAFLAGS) -o smallpt-cuda smallpt.cu 
 
 clean:
-	-rm smallpt smallpt4k
+	-rm smallpt smallpt4k smallpt-omp smallpt-cuda
 
 tkdiff:
 	for i in `svn st -q | cut -c 8-`; do tkdiff $$i; done
