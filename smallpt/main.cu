@@ -57,6 +57,7 @@ __device__ inline bool intersect(const int num_spheres, const Sphere* spheres, c
 __device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray &r, int depth, unsigned short *Xi, curandState* state){
   double t;                               // distance to intersection
   int id=0;                               // id of intersected object
+  if(depth > 1) return Vec();
   if (!intersect(num_spheres, spheres, r, t, id)) return Vec(); // if miss, return black 
   const Sphere &obj = spheres[id];        // the hit object
   Vec x=r.o+r.d*t, n=(x-obj.p).norm(), nl=n.dot(r.d)<0?n:n*-1, f=obj.c;
@@ -103,7 +104,6 @@ __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int
             r = r + radiance(num_spheres, spheres, Ray(cam.o+d*140,d.norm()),0,Xi,&state)*(1./samps);
           } // Camera rays are pushed ^^^^^ forward to start in interior
           c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
-          
         }
       }
   }
