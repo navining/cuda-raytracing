@@ -13,6 +13,7 @@ commands:
     - /bin/bash -c "cp -r /src/* ."
     - cmake /src
     - make
-    - ./cu_smallpt
+    - ./cu_smallpt 4000
+    #- ./smallpt 100
     #- ./cuda-program ...
     #- Evaluate accelerated version ...

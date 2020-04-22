@@ -19,7 +19,7 @@ struct Vec {        // Usage: time ./smallpt 5000 && xv image.ppm
   __host__ __device__ Vec operator%(Vec&b){return Vec(y*b.z-z*b.y,z*b.x-x*b.z,x*b.y-y*b.x);}
 };
 struct Ray { Vec o, d; __host__ __device__ Ray(Vec o_, Vec d_) : o(o_), d(d_) {} };
-enum Refl_t { DIFF, SPEC, REFR };  // material types, used in radiance()
+enum Refl_t { DIFF, SPEC, REFR };  // material types, used in radiance(num_spheres, )
 struct Sphere {
   double rad;       // radius
   Vec p, e, c;      // position, emission, color
@@ -49,15 +49,15 @@ Sphere h_spheres[] = {//Scene: radius, position, emission, color, material
 };
 __host__ __device__ inline double clamp(double x){ return x<0 ? 0 : x>1 ? 1 : x; }
 __host__ __device__ inline int toInt(double x){ return int(pow(clamp(x),1/2.2)*255+.5); }
-__device__ inline bool intersect(const Sphere* spheres, const Ray &r, double &t, int &id){
-  double n=sizeof(spheres)/sizeof(Sphere), d, inf=t=1e20;
+__device__ inline bool intersect(const int num_spheres, const Sphere* spheres, const Ray &r, double &t, int &id){
+  double n=num_spheres, d, inf=t=1e20;
   for(int i=int(n);i--;) if((d=spheres[i].intersect(r))&&d<t){t=d;id=i;}
   return t<inf;
 }
-__device__ Vec radiance(const Sphere* spheres, const Ray &r, int depth, unsigned short *Xi, curandState* state){
+__device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray &r, int depth, unsigned short *Xi, curandState* state){
   double t;                               // distance to intersection
   int id=0;                               // id of intersected object
-  if (!intersect(spheres, r, t, id)) return Vec(); // if miss, return black
+  if (!intersect(num_spheres, spheres, r, t, id)) return Vec(); // if miss, return black 
   const Sphere &obj = spheres[id];        // the hit object
   Vec x=r.o+r.d*t, n=(x-obj.p).norm(), nl=n.dot(r.d)<0?n:n*-1, f=obj.c;
   double p = f.x>f.y && f.x>f.z ? f.x : f.y>f.z ? f.y : f.z; // max refl
@@ -66,69 +66,75 @@ __device__ Vec radiance(const Sphere* spheres, const Ray &r, int depth, unsigned
     double r1=2*M_PI*curand_uniform_double(state), r2=curand_uniform_double(state), r2s=sqrt(r2);
     Vec w=nl, u=((fabs(w.x)>.1?Vec(0,1):Vec(1))%w).norm(), v=w%u;
     Vec d = (u*cos(r1)*r2s + v*sin(r1)*r2s + w*sqrt(1-r2)).norm();
-    return obj.e + f.mult(radiance(spheres,Ray(x,d),depth,Xi,state));
+    return obj.e + f.mult(radiance(num_spheres, spheres,Ray(x,d),depth,Xi,state));
   } else if (obj.refl == SPEC)            // Ideal SPECULAR reflection
-    return obj.e + f.mult(radiance(spheres,Ray(x,r.d-n*2*n.dot(r.d)),depth,Xi,state));
+    return obj.e + f.mult(radiance(num_spheres, spheres,Ray(x,r.d-n*2*n.dot(r.d)),depth,Xi,state));
   Ray reflRay(x, r.d-n*2*n.dot(r.d));     // Ideal dielectric REFRACTION
   bool into = n.dot(nl)>0;                // Ray from outside going in?
   double nc=1, nt=1.5, nnt=into?nc/nt:nt/nc, ddn=r.d.dot(nl), cos2t;
   if ((cos2t=1-nnt*nnt*(1-ddn*ddn))<0)    // Total internal reflection
-    return obj.e + f.mult(radiance(spheres,reflRay,depth,Xi,state));
+    return obj.e + f.mult(radiance(num_spheres, spheres,reflRay,depth,Xi,state));
   Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
   double a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
   double Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
   return obj.e + f.mult(depth>2 ? (curand_uniform_double(state)<P ?   // Russian roulette
-    radiance(spheres,reflRay,depth,Xi,state)*RP:radiance(spheres,Ray(x,tdir),depth,Xi,state)*TP) :
-    radiance(spheres,reflRay,depth,Xi,state)*Re+radiance(spheres,Ray(x,tdir),depth,Xi,state)*Tr);
+    radiance(num_spheres, spheres,reflRay,depth,Xi,state)*RP:radiance(num_spheres, spheres,Ray(x,tdir),depth,Xi,state)*TP) :
+    radiance(num_spheres, spheres,reflRay,depth,Xi,state)*Re+radiance(num_spheres, spheres,Ray(x,tdir),depth,Xi,state)*Tr);
 }
 
-__global__ void render(Sphere* spheres, Vec* c, int samps){
+__global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int samps){
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   Ray cam(Vec(50,52,295.6), Vec(0,-0.042612,-1).norm()); // cam pos, dir
   Vec cx=Vec(w*.5135/h), cy=(cx%cam.d).norm()*.5135, r;
-  
-  if (y<h && x<w){
+
+  if (y<h && x<w){ 
     unsigned short Xi[3]={0,0,y*y*y};
     curandState state;
     curand_init(y*y*y, 0, 0, &state);
-    for (int sy=0, i=(h-y-1)*w+x; sy<2; sy++) 
+ 
+    for (int sy=0, i=(h-y-1)*w+x; sy<2; sy++){ 
         for (int sx=0; sx<2; sx++, r=Vec()){        // 2x2 subpixel cols
           for (int s=0; s<samps; s++){
             double r1=2*curand_uniform_double(&state), dx=r1<1 ? sqrt(r1)-1: 1-sqrt(2-r1);
             double r2=2*curand_uniform_double(&state), dy=r2<1 ? sqrt(r2)-1: 1-sqrt(2-r2);
             Vec d = cx*( ( (sx+.5 + dx)/2 + x)/w - .5) +
                     cy*( ( (sy+.5 + dy)/2 + y)/h - .5) + cam.d;
-            r = r + radiance(spheres, Ray(cam.o+d*140,d.norm()),0,Xi,&state)*(1./samps);
+            r = r + radiance(num_spheres, spheres, Ray(cam.o+d*140,d.norm()),0,Xi,&state)*(1./samps);
           } // Camera rays are pushed ^^^^^ forward to start in interior
           c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
+          
         }
+      }
   }
 }
 
 int main(int argc, char *argv[]){
   int w=1024, h=768, samps = argc==2 ? atoi(argv[1])/4 : 1; // # samples
 
-  timer_start("Getting GPU Data."); //@@ start a timer
+  //timer_start("Getting GPU Data."); //@@ start a timer
   // CUDA memory allocation
   Sphere *spheres;
   Vec *h_c=new Vec[w*h];
   Vec *c;
-  cudaMalloc((void **)&c, sizeof(h_c));
+  int num_spheres = sizeof(h_spheres)/sizeof(Sphere);
+  
+  cudaMalloc((void **)&c, w*h*sizeof(Vec));
   cudaMalloc((void **)&spheres, sizeof(h_spheres));
-  cudaMemcpy(c, h_c, sizeof(Vec), cudaMemcpyHostToDevice);
-  cudaMemcpyToSymbol(spheres, &h_spheres, sizeof(h_spheres), 0, cudaMemcpyHostToDevice);
 
-  dim3 dimGrid((w-1)/64+1, (h-1)/64+1, 1);
-  dim3 dimBlock(64, 64, 1);
-  render<<<dimGrid, dimBlock>>>(spheres, c, samps);
+  cudaMemset(c, 0, w*h*sizeof(Vec));
+  cudaMemcpy(spheres, &h_spheres, sizeof(h_spheres), cudaMemcpyHostToDevice);
 
-  cudaMemcpyFromSymbol(h_c, c, sizeof(Vec), 0, cudaMemcpyDeviceToHost);
+  dim3 dimGrid((w-1)/16+1, (h-1)/16+1, 1);
+  dim3 dimBlock(16, 16, 1);
+  
+  render<<<dimGrid, dimBlock>>>(num_spheres, spheres, c, samps);
+  cudaMemcpy(h_c, c, w*h*sizeof(Vec), cudaMemcpyDeviceToHost);
 
   cudaFree(c);
   cudaFree(spheres);
 
-  timer_stop(); //@@ stop the timer
+  //timer_stop(); //@@ stop the timer
 
   FILE *f = fopen("image.ppm", "w");         // Write image to PPM file.
   fprintf(f, "P3\n%d %d\n%d\n", w, h, 255);
