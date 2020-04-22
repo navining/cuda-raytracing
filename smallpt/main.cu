@@ -54,33 +54,51 @@ __device__ inline bool intersect(const int num_spheres, const Sphere* spheres, c
   for(int i=int(n);i--;) if((d=spheres[i].intersect(r))&&d<t){t=d;id=i;}
   return t<inf;
 }
-__device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray &r, int depth, unsigned short *Xi, curandState* state){
+__device__ Vec radiance(const int num_spheres, const Sphere* spheres, Ray r, int depth, unsigned short *Xi, curandState* state){
   double t;                               // distance to intersection
   int id=0;                               // id of intersected object
-  if(depth > 1) return Vec();
-  if (!intersect(num_spheres, spheres, r, t, id)) return Vec(); // if miss, return black 
-  const Sphere &obj = spheres[id];        // the hit object
-  Vec x=r.o+r.d*t, n=(x-obj.p).norm(), nl=n.dot(r.d)<0?n:n*-1, f=obj.c;
-  double p = f.x>f.y && f.x>f.z ? f.x : f.y>f.z ? f.y : f.z; // max refl
-  if (++depth>5) if (curand_uniform_double(state)<p) f=f*(1/p); else return obj.e; //R.R.
-  if (obj.refl == DIFF){                  // Ideal DIFFUSE reflection
-    double r1=2*M_PI*curand_uniform_double(state), r2=curand_uniform_double(state), r2s=sqrt(r2);
-    Vec w=nl, u=((fabs(w.x)>.1?Vec(0,1):Vec(1))%w).norm(), v=w%u;
-    Vec d = (u*cos(r1)*r2s + v*sin(r1)*r2s + w*sqrt(1-r2)).norm();
-    return obj.e + f.mult(radiance(num_spheres, spheres,Ray(x,d),depth,Xi,state));
-  } else if (obj.refl == SPEC)            // Ideal SPECULAR reflection
-    return obj.e + f.mult(radiance(num_spheres, spheres,Ray(x,r.d-n*2*n.dot(r.d)),depth,Xi,state));
-  Ray reflRay(x, r.d-n*2*n.dot(r.d));     // Ideal dielectric REFRACTION
-  bool into = n.dot(nl)>0;                // Ray from outside going in?
-  double nc=1, nt=1.5, nnt=into?nc/nt:nt/nc, ddn=r.d.dot(nl), cos2t;
-  if ((cos2t=1-nnt*nnt*(1-ddn*ddn))<0)    // Total internal reflection
-    return obj.e + f.mult(radiance(num_spheres, spheres,reflRay,depth,Xi,state));
-  Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
-  double a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
-  double Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
-  return obj.e + f.mult(depth>2 ? (curand_uniform_double(state)<P ?   // Russian roulette
-    radiance(num_spheres, spheres,reflRay,depth,Xi,state)*RP:radiance(num_spheres, spheres,Ray(x,tdir),depth,Xi,state)*TP) :
-    radiance(num_spheres, spheres,reflRay,depth,Xi,state)*Re+radiance(num_spheres, spheres,Ray(x,tdir),depth,Xi,state)*Tr);
+ 
+  Vec s_e[10];
+  Vec s_f[10];
+  for(int i=0; i<10; i++){
+    if (!intersect(num_spheres, spheres, r, t, id)) return Vec(); // if miss, return black
+    const Sphere &obj = spheres[id];        // the hit object
+    Vec x=r.o+r.d*t, n=(x-obj.p).norm(), nl=n.dot(r.d)<0?n:n*-1, f=obj.c;
+    double p = f.x>f.y && f.x>f.z ? f.x : f.y>f.z ? f.y : f.z; // max refl
+    if (i>5) {
+      if (curand_uniform_double(state)<p) f=f*(1/p); 
+      else {
+        Vec res = obj.e;
+        Vec e,f;
+        while(--i>=0){
+          e = s_e[i];
+          f = s_f[i];
+          res = e + f.mult(res);
+        }
+        return res;
+      }
+    } //return obj.e; //R.R.
+    s_e[i]=obj.e;
+    s_f[i]=f;
+    if (obj.refl == DIFF){                  // Ideal DIFFUSE reflection
+      double r1=2*M_PI*curand_uniform_double(state), r2=curand_uniform_double(state), r2s=sqrt(r2);
+      Vec w=nl, u=((fabs(w.x)>.1?Vec(0,1):Vec(1))%w).norm(), v=w%u;
+      Vec d = (u*cos(r1)*r2s + v*sin(r1)*r2s + w*sqrt(1-r2)).norm();
+      r = Ray(x,d);
+      continue;
+      //return obj.e + f.mult(radiance(num_spheres, spheres,Ray(x,d),depth,Xi,state));
+    } else if (obj.refl == SPEC) {r = Ray(x,r.d-n*2*n.dot(r.d)); continue;}
+    Ray reflRay(x, r.d-n*2*n.dot(r.d));     // Ideal dielectric REFRACTION
+    bool into = n.dot(nl)>0;                // Ray from outside going in?
+    double nc=1, nt=1.5, nnt=into?nc/nt:nt/nc, ddn=r.d.dot(nl), cos2t;
+    if ((cos2t=1-nnt*nnt*(1-ddn*ddn))<0) {r=reflRay; continue;}   // Total internal reflection
+      //return obj.e + f.mult(radiance(num_spheres, spheres,reflRay,depth,Xi,state)); 
+    Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
+    double a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
+    double Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
+    r = Ray(x,tdir);
+  }
+  return Vec();
 }
 
 __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int samps){
