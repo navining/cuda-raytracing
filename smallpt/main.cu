@@ -57,7 +57,7 @@ __device__ inline bool intersect(const int num_spheres, const Sphere* spheres, c
 __device__ Vec radiance(const int num_spheres, const Sphere* spheres, Ray r, int depth, unsigned short *Xi, curandState* state){
   double t;                               // distance to intersection
   int id=0;                               // id of intersected object
- 
+
   Vec s_e[10];
   Vec s_f[10];
   for(int i=0; i<10; i++){
@@ -96,7 +96,18 @@ __device__ Vec radiance(const int num_spheres, const Sphere* spheres, Ray r, int
     Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
     double a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
     double Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
-    r = Ray(x,tdir);
+
+    if(curand_uniform_double(state)<P){
+      r = reflRay;
+      s_e[i] = s_e[i] * RP;
+      s_f[i] = s_f[i] * RP;
+    }
+    else {
+      r = Ray(x,tdir);
+      s_e[i] = s_e[i] * TP;
+      s_f[i] = s_f[i] * TP;
+     }
+    
   }
   return Vec();
 }
@@ -126,11 +137,10 @@ __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int
       }
   }
 }
-
 int main(int argc, char *argv[]){
   int w=1024, h=768, samps = argc==2 ? atoi(argv[1])/4 : 1; // # samples
 
-  //timer_start("Getting GPU Data."); //@@ start a timer
+  timer_start("Getting GPU Data."); //@@ start a timer
   // CUDA memory allocation
   Sphere *spheres;
   Vec *h_c=new Vec[w*h];
@@ -152,7 +162,7 @@ int main(int argc, char *argv[]){
   cudaFree(c);
   cudaFree(spheres);
 
-  //timer_stop(); //@@ stop the timer
+  timer_stop(); //@@ stop the timer
 
   FILE *f = fopen("image.ppm", "w");         // Write image to PPM file.
   fprintf(f, "P3\n%d %d\n%d\n", w, h, 255);
