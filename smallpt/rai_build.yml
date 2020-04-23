@@ -11,9 +11,11 @@ resources:
 commands:
   build: # commands in the following seciton are executed sequentially
     - /bin/bash -c "cp -r /src/* ."
+    - make smallpt
     - cmake /src
     - make
-    - ./cu_smallpt 8000
-    #- ./smallpt 100
-    #- ./cuda-program ...
+    #- OpenMP version ...
+    - ./time -p -o result.txt --append ./smallpt 1000
+    #- CUDA version ...
+    - ./time -p -o result.txt --append ./cu_smallpt 1000
     #- Evaluate accelerated version ...
