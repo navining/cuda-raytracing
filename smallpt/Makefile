@@ -22,7 +22,7 @@ default: all
 all: smallpt smallpt4k
 
 smallpt: smallpt.cpp  Makefile
-	$(CPP) $(CPPFLAGS) -o smallpt-omp smallpt.cpp 
+	$(CPP) $(CPPFLAGS) -o smallpt smallpt.cpp 
 
 clean:
 	-rm smallpt smallpt4k smallpt-omp smallpt-cuda
