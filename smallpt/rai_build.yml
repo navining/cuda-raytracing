@@ -12,11 +12,10 @@ commands:
   build: # commands in the following seciton are executed sequentially
     - /bin/bash -c "cp -r /src/* ."
     - make smallpt
-    - ./smallpt 12
-    # openmp version
-    - make smallpt-omp
-    - ./smallpt-omp 12
-    #- ./cuda-program ...
-    - make smallpt-cuda
-    - ./smallpt-cuda 12
+    - cmake /src
+    - make
+    #- OpenMP version ...
+    - ./time -p -o result.txt --append ./smallpt 1000
+    #- CUDA version ...
+    - ./time -p -o result.txt --append ./cu_smallpt 1000
     #- Evaluate accelerated version ...
