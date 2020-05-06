@@ -55,62 +55,56 @@ __device__ inline bool intersect(const int num_spheres, const Sphere* spheres, c
   for(int i=int(n);i--;) if((d=spheres[i].intersect(r))&&d<t){t=d;id=i;}
   return t<inf;
 }
-__device__ Vec radiance(const int num_spheres, const Sphere* spheres, Ray r, int depth, unsigned short *Xi, curandState* state){
+__device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray _r, int _depth, curandState* state){
   double t;                               // distance to intersection
   int id=0;                               // id of intersected object
-
-  Vec s_e[10];
-  Vec s_f[10];
-  for(int i=0; i<10; i++){
-    if (!intersect(num_spheres, spheres, r, t, id)) return Vec(); // if miss, return black
+  Ray r=_r;
+  int depth=_depth;
+  Vec cl(0,0,0);   // accumulated color
+  Vec cf(1,1,1);  // accumulated reflectance
+  while (1){
+    if (!intersect(num_spheres, spheres, r, t, id)) return cl; // if miss, return black
     const Sphere &obj = spheres[id];        // the hit object
     Vec x=r.o+r.d*t, n=(x-obj.p).norm(), nl=n.dot(r.d)<0?n:n*-1, f=obj.c;
     double p = f.x>f.y && f.x>f.z ? f.x : f.y>f.z ? f.y : f.z; // max refl
-    if (i>5) {
-      if (curand_uniform_double(state)<p) f=f*(1/p); 
-      else {
-        Vec res = obj.e;
-        Vec e,f;
-        while(--i>=0){
-          e = s_e[i];
-          f = s_f[i];
-          res = e + f.mult(res);
-        }
-        return res;
-      }
-    } //return obj.e; //R.R.
-    s_e[i]=obj.e;
-    s_f[i]=f;
+    cl = cl + cf.mult(obj.e);
+    if (++depth>5) if (curand_uniform_double(state)<p) f=f*(1/p); else return cl; //R.R.
+    cf = cf.mult(f);
     if (obj.refl == DIFF){                  // Ideal DIFFUSE reflection
       double r1=2*M_PI*curand_uniform_double(state), r2=curand_uniform_double(state), r2s=sqrt(r2);
       Vec w=nl, u=((fabs(w.x)>.1?Vec(0,1):Vec(1))%w).norm(), v=w%u;
       Vec d = (u*cos(r1)*r2s + v*sin(r1)*r2s + w*sqrt(1-r2)).norm();
+      //return obj.e + f.mult(radiance(Ray(x,d),depth,Xi));
       r = Ray(x,d);
       continue;
-      //return obj.e + f.mult(radiance(num_spheres, spheres,Ray(x,d),depth,Xi,state));
-    } else if (obj.refl == SPEC) {r = Ray(x,r.d-n*2*n.dot(r.d)); continue;}
+    } else if (obj.refl == SPEC){           // Ideal SPECULAR reflection
+      //return obj.e + f.mult(radiance(Ray(x,r.d-n*2*n.dot(r.d)),depth,Xi));
+      r = Ray(x,r.d-n*2*n.dot(r.d));
+      continue;
+    }
     Ray reflRay(x, r.d-n*2*n.dot(r.d));     // Ideal dielectric REFRACTION
     bool into = n.dot(nl)>0;                // Ray from outside going in?
     double nc=1, nt=1.5, nnt=into?nc/nt:nt/nc, ddn=r.d.dot(nl), cos2t;
-    if ((cos2t=1-nnt*nnt*(1-ddn*ddn))<0) {r=reflRay; continue;}   // Total internal reflection
-      //return obj.e + f.mult(radiance(num_spheres, spheres,reflRay,depth,Xi,state)); 
+    if ((cos2t=1-nnt*nnt*(1-ddn*ddn))<0){    // Total internal reflection
+      //return obj.e + f.mult(radiance(reflRay,depth,Xi));
+      r = reflRay;
+      continue;
+    }
     Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
     double a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
     double Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
-
-    if(curand_uniform_double(state)<P){
+    // return obj.e + f.mult(erand48(Xi)<P ?
+    //                       radiance(reflRay,    depth,Xi)*RP:
+    //                       radiance(Ray(x,tdir),depth,Xi)*TP);
+    if (curand_uniform_double(state)<P){
+      cf = cf*RP;
       r = reflRay;
-      s_e[i] = s_e[i] * RP;
-      s_f[i] = s_f[i] * RP;
-    }
-    else {
+    } else {
+      cf = cf*TP;
       r = Ray(x,tdir);
-      s_e[i] = s_e[i] * TP;
-      s_f[i] = s_f[i] * TP;
-     }
-    
+    }
+    continue;
   }
-  return Vec();
 }
 
 __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int samps){
@@ -120,7 +114,6 @@ __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int
   Vec cx=Vec(w*.5135/h), cy=(cx%cam.d).norm()*.5135, r;
 
   if (y<h && x<w){ 
-    unsigned short Xi[3]={0,0,y*y*y};
     curandState state;
     curand_init(y*y*y, 0, 0, &state);
  
@@ -131,7 +124,7 @@ __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int
             double r2=2*curand_uniform_double(&state), dy=r2<1 ? sqrt(r2)-1: 1-sqrt(2-r2);
             Vec d = cx*( ( (sx+.5 + dx)/2 + x)/w - .5) +
                     cy*( ( (sy+.5 + dy)/2 + y)/h - .5) + cam.d;
-            r = r + radiance(num_spheres, spheres, Ray(cam.o+d*140,d.norm()),0,Xi,&state)*(1./samps);
+            r = r + radiance(num_spheres, spheres, Ray(cam.o+d*140,d.norm()),0,&state)*(1./samps);
           } // Camera rays are pushed ^^^^^ forward to start in interior
           c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
         }
