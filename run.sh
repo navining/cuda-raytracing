@@ -21,3 +21,7 @@ PID="$!"
 wait $PID
 
 tar -xf result.tar.gz
+PID="$!"
+wait $PID
+
+python3 evaluate.py
