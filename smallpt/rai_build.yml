@@ -1,6 +1,6 @@
 rai:
   version: 0.2
-  image: weiren2/ece408-sp20:topic-3-raytracing-test
+  image: weiren2/ece408-sp20:topic-3-raytracing
 resources:
   cpu:
     architecture: amd64 # use amd64 unless your project requires running on a different architecture
@@ -10,12 +10,28 @@ resources:
     network: true
 commands:
   build: # commands in the following seciton are executed sequentially
+    # Preparing for profiling
+    - which nsys
+    - nsys version
+    - which nv-nsight-cu-cli
+    - nv-nsight-cu-cli --version
+    - nvidia-smi
+    - echo "Check Nsight Configurations"
+    - bash -c "nv-nsight-cu-cli --devices 0 --query-metrics > metrics.txt"
+    - bash -c "nv-nsight-cu-cli --list-sections > sections.txt"
+    - bash -c "nsys status -e 2>&1 > status.txt"    
     - /bin/bash -c "cp -r /src/* ."
+    # Build files
     - make smallpt
     - cmake /src
     - make
-    #- OpenMP version ...
-    - ./time -p -o result.txt --append ./smallpt 1000
-    #- CUDA version ...
+    # OpenMP version ...
+    # ./time -p -o result.txt --append ./smallpt 1000
+    # CUDA version ...
+    - echo "run without profiling"
     - ./time -p -o result.txt --append ./cu_smallpt 1000
-    #- Evaluate accelerated version ...
+    # Evaluate accelerated version ...
+    - echo "Nsight Compute Results"
+    - nv-nsight-cu-cli --kernel-id ::render:1 --section ".*" -o cu_smallpt cu_smallpt 1000
+    - echo "Nsight Systems Results"
+    - nsys profile -o cu_smallpt cu_smallpt 1000

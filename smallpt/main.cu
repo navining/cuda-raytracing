@@ -4,6 +4,7 @@
 #include <stdio.h>  //        Remove "-fopenmp" for g++ version < 4.2
 #include <curand.h>
 #include <curand_kernel.h>
+#include <nvToolsExt.h>
 #include "common/fmt.hpp"
 #include "common/utils.hpp"
 
