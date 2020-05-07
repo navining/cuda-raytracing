@@ -22,10 +22,10 @@ struct Vec {        // Usage: time ./smallpt 5000 && xv image.ppm
 struct Ray { Vec o, d; __host__ __device__ Ray(Vec o_, Vec d_) : o(o_), d(d_) {} };
 enum Refl_t { DIFF, SPEC, REFR };  // material types, used in radiance(num_spheres, )
 struct Sphere {
-  double rad;       // radius
+  float rad;       // radius
   Vec p, e, c;      // position, emission, color
   Refl_t refl;      // reflection type (DIFFuse, SPECular, REFRactive)
-  __host__ __device__ Sphere(double rad_, Vec p_, Vec e_, Vec c_, Refl_t refl_):
+  __host__ __device__ Sphere(float rad_, Vec p_, Vec e_, Vec c_, Refl_t refl_):
                     rad(rad_), p(p_), e(e_), c(c_), refl(refl_) {}
   __host__ __device__ double intersect(const Ray &r) const { // returns distance, 0 if nohit
     Vec op = p-r.o; // Solve t^2*d.d + 2*t*(o-p).d + (o-p).(o-p)-R^2 = 0
@@ -48,15 +48,15 @@ Sphere h_spheres[] = {//Scene: radius, position, emission, color, material
   Sphere(16.5,Vec(73,16.5,78),       Vec(),Vec(1,1,1)*.999, REFR),//Glas
   Sphere(600, Vec(50,681.6-.27,81.6),Vec(12,12,12),  Vec(), DIFF) //Lite
 };
-__host__ __device__ inline double clamp(double x){ return x<0 ? 0 : x>1 ? 1 : x; }
-__host__ __device__ inline int toInt(double x){ return int(pow(clamp(x),1/2.2)*255+.5); }
-__device__ inline bool intersect(const int num_spheres, const Sphere* spheres, const Ray &r, double &t, int &id){
-  double n=num_spheres, d, inf=t=1e20;
+__host__ __device__ inline float clamp(float x){ return x<0 ? 0 : x>1 ? 1 : x; }
+__host__ __device__ inline int toInt(float x){ return int(pow(clamp(x),1/2.2)*255+.5); }
+__device__ inline bool intersect(const int num_spheres, const Sphere* spheres, const Ray &r, float &t, int &id){
+  float n=num_spheres, d, inf=t=1e20;
   for(int i=int(n);i--;) if((d=spheres[i].intersect(r))&&d<t){t=d;id=i;}
   return t<inf;
 }
 __device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray _r, int _depth, curandState* state){
-  double t;                               // distance to intersection
+  float t;                               // distance to intersection
   int id=0;                               // id of intersected object
   Ray r=_r;
   int depth=_depth;
@@ -84,15 +84,15 @@ __device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray 
     }
     Ray reflRay(x, r.d-n*2*n.dot(r.d));     // Ideal dielectric REFRACTION
     bool into = n.dot(nl)>0;                // Ray from outside going in?
-    double nc=1, nt=1.5, nnt=into?nc/nt:nt/nc, ddn=r.d.dot(nl), cos2t;
+    float nc=1, nt=1.5, nnt=into?nc/nt:nt/nc, ddn=r.d.dot(nl), cos2t;
     if ((cos2t=1-nnt*nnt*(1-ddn*ddn))<0){    // Total internal reflection
       //return obj.e + f.mult(radiance(reflRay,depth,Xi));
       r = reflRay;
       continue;
     }
     Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
-    double a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
-    double Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
+    float a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
+    float Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
     // return obj.e + f.mult(erand48(Xi)<P ?
     //                       radiance(reflRay,    depth,Xi)*RP:
     //                       radiance(Ray(x,tdir),depth,Xi)*TP);
