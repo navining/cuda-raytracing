@@ -68,10 +68,10 @@ __device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray 
     Vec x=r.o+r.d*t, n=(x-obj.p).norm(), nl=n.dot(r.d)<0?n:n*-1, f=obj.c;
     double p = f.x>f.y && f.x>f.z ? f.x : f.y>f.z ? f.y : f.z; // max refl
     cl = cl + cf.mult(obj.e);
-    if (++depth>5) if (curand_uniform_double(state)<p) f=f*(1/p); else return cl; //R.R.
+    if (++depth>5) if (curand_uniform(state)<p) f=f*(1/p); else return cl; //R.R.
     cf = cf.mult(f);
     if (obj.refl == DIFF){                  // Ideal DIFFUSE reflection
-      double r1=2*M_PI*curand_uniform_double(state), r2=curand_uniform_double(state), r2s=sqrt(r2);
+      double r1=2*M_PI*curand_uniform(state), r2=curand_uniform(state), r2s=sqrt(r2);
       Vec w=nl, u=((fabs(w.x)>.1?Vec(0,1):Vec(1))%w).norm(), v=w%u;
       Vec d = (u*cos(r1)*r2s + v*sin(r1)*r2s + w*sqrt(1-r2)).norm();
       //return obj.e + f.mult(radiance(Ray(x,d),depth,Xi));
@@ -92,11 +92,11 @@ __device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray 
     }
     Vec tdir = (r.d*nnt - n*((into?1:-1)*(ddn*nnt+sqrt(cos2t)))).norm();
     float a=nt-nc, b=nt+nc, R0=a*a/(b*b), c = 1-(into?-ddn:tdir.dot(n));
-    float Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25+.5*Re,RP=Re/P,TP=Tr/(1-P);
+    float Re=R0+(1-R0)*c*c*c*c*c,Tr=1-Re,P=.25f+.5f*Re,RP=Re/P,TP=Tr/(1-P);
     // return obj.e + f.mult(erand48(Xi)<P ?
     //                       radiance(reflRay,    depth,Xi)*RP:
     //                       radiance(Ray(x,tdir),depth,Xi)*TP);
-    if (curand_uniform_double(state)<P){
+    if (curand_uniform(state)<P){
       cf = cf*RP;
       r = reflRay;
     } else {
@@ -111,7 +111,7 @@ __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   Ray cam(Vec(50,52,295.6), Vec(0,-0.042612,-1).norm()); // cam pos, dir
-  Vec cx=Vec(w*.5135/h), cy=(cx%cam.d).norm()*.5135, r;
+  Vec cx=Vec(w*.5135f/h), cy=(cx%cam.d).norm()*.5135f, r;
 
   if (y<h && x<w){ 
     curandState state;
@@ -120,13 +120,13 @@ __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int
     for (int sy=0, i=(h-y-1)*w+x; sy<2; sy++){ 
         for (int sx=0; sx<2; sx++, r=Vec()){        // 2x2 subpixel cols
           for (int s=0; s<samps; s++){
-            double r1=2*curand_uniform_double(&state), dx=r1<1 ? sqrt(r1)-1: 1-sqrt(2-r1);
-            double r2=2*curand_uniform_double(&state), dy=r2<1 ? sqrt(r2)-1: 1-sqrt(2-r2);
-            Vec d = cx*( ( (sx+.5 + dx)/2 + x)/w - .5) +
-                    cy*( ( (sy+.5 + dy)/2 + y)/h - .5) + cam.d;
+            float r1=2*curand_uniform(&state), dx=r1<1 ? sqrt(r1)-1: 1-sqrt(2-r1);
+            float r2=2*curand_uniform(&state), dy=r2<1 ? sqrt(r2)-1: 1-sqrt(2-r2);
+            Vec d = cx*( ( (sx+.5f + dx)/2 + x)/w - .5f) +
+                    cy*( ( (sy+.5f + dy)/2 + y)/h - .5f) + cam.d;
             r = r + radiance(num_spheres, spheres, Ray(cam.o+d*140,d.norm()),0,&state)*(1./samps);
           } // Camera rays are pushed ^^^^^ forward to start in interior
-          c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25;
+          c[i] = c[i] + Vec(clamp(r.x),clamp(r.y),clamp(r.z))*.25f;
         }
       }
   }
