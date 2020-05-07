@@ -147,8 +147,8 @@ int main(int argc, char *argv[]){
   cudaMemset(c, 0, w*h*sizeof(Vec));
   cudaMemcpy(spheres, &h_spheres, sizeof(h_spheres), cudaMemcpyHostToDevice);
 
-  dim3 dimGrid((w-1)/16+1, (h-1)/16+1, 1);
-  dim3 dimBlock(16, 16, 1);
+  dim3 dimGrid(ceil((1.0*w)/32), ceil((1.0*h)/16), 1);
+  dim3 dimBlock(32, 16, 1);
   
   render<<<dimGrid, dimBlock>>>(num_spheres, spheres, c, samps);
   cudaMemcpy(h_c, c, w*h*sizeof(Vec), cudaMemcpyDeviceToHost);
