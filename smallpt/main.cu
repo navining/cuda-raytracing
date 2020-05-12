@@ -25,6 +25,7 @@ struct Sphere {
   float rad;       // radius
   Vec p, e, c;      // position, emission, color
   Refl_t refl;      // reflection type (DIFFuse, SPECular, REFRactive)
+  Sphere(){}
   __host__ __device__ Sphere(float rad_, Vec p_, Vec e_, Vec c_, Refl_t refl_):
                     rad(rad_), p(p_), e(e_), c(c_), refl(refl_) {}
   __host__ __device__ double intersect(const Ray &r) const { // returns distance, 0 if nohit
@@ -36,69 +37,71 @@ struct Sphere {
   }
 };
 
+#define MAX_SPHERES 16
+Sphere h_spheres[MAX_SPHERES];
+int numOfSpheres = 0;
 __constant__ int w = 1024;
 __constant__ int h = 768;
-Sphere h_spheres[] = {//Scene: radius, position, emission, color, material
-  Sphere(1e5, Vec( 1e5+1,40.8,81.6), Vec(),Vec(.75,.25,.25),DIFF),//Left
-  Sphere(1e5, Vec(-1e5+99,40.8,81.6),Vec(),Vec(.25,.25,.75),DIFF),//Rght
-  Sphere(1e5, Vec(50,40.8, 1e5),     Vec(),Vec(.75,.75,.75),DIFF),//Back
-  Sphere(1e5, Vec(50,40.8,-1e5+170), Vec(),Vec(),           DIFF),//Frnt
-  Sphere(1e5, Vec(50, 1e5, 81.6),    Vec(),Vec(.75,.75,.75),DIFF),//Botm
-  Sphere(1e5, Vec(50,-1e5+81.6,81.6),Vec(),Vec(.75,.75,.75),DIFF),//Top
-  Sphere(16.5,Vec(27,16.5,47),       Vec(),Vec(1,1,1)*.999, SPEC),//Mirr
-  Sphere(16.5,Vec(73,16.5,78),       Vec(),Vec(1,1,1)*.999, REFR),//Glas
-  Sphere(600, Vec(50,681.6-.27,81.6),Vec(12,12,12),  Vec(), DIFF) //Lite
-};
+
+void readFromFile(const char *input) {
+  FILE *fp;
+  if ((fp = fopen(input, "r")) == NULL) {
+    fprintf(stderr, "Fail to read from %s: No such file!\n", input);
+    exit(1);
+  }
+  char buf[256];
+  int len;
+  char *p;
+  double t[11];
+  int j = 0;
+  try {
+    while (fgets(buf, 256, fp) != NULL) {
+      int i = 0;
+
+      len = strlen(buf);
+      buf[len - 1] = '\0';
+      p = strtok(buf, ", ");
+      while (p != NULL && i < 11) {
+        if (i != 10) {
+          t[i] = atof(p);
+        } else {
+          if (strcmp(p, "DIFF") == 0) {
+            t[i] = DIFF;
+          } else if (strcmp(p, "SPEC") == 0) {
+            t[i] = SPEC;
+          } else if (strcmp(p, "REFR") == 0) {
+            t[i] = REFR;
+          } else {
+            throw;
+          }
+        }
+        p = strtok(NULL, ", ");
+        i++;
+      }
+      if (i < 11) throw;
+      if (numOfSpheres >= 16) {
+        printf("Number of spheres exceeds the limit! MAX_SPHERES: %d\n",
+             MAX_SPHERES);
+        exit(1);
+      }
+      h_spheres[j] = Sphere(t[0], Vec(t[1], t[2], t[3]), Vec(t[4], t[5], t[6]),
+                          Vec(t[7], t[8], t[9]), (Refl_t)t[10]);
+      j++;
+      numOfSpheres++;
+
+    }
+
+  } catch (...) {
+    printf("Fail to read from %s: Invalid syntax!\n", input);
+    exit(1);
+  }
+}
+
 __host__ __device__ inline float clamp(float x){ return x<0 ? 0 : x>1 ? 1 : x; }
 __host__ __device__ inline int toInt(float x){ return int(pow(clamp(x),1/2.2)*255+.5); }
 __device__ inline bool intersect(const int num_spheres, const Sphere* spheres, const Ray &r, float &t, int &id){
-  float d;
-  float inf=t=1e20;
-  if((d=spheres[9].intersect(r)) && d<t){
-    t=d;
-    id=9;
-  }
-
-  if((d=spheres[8].intersect(r)) && d<t){
-    t=d;
-    id=8;
-  }
-  if((d=spheres[7].intersect(r)) && d<t){
-    t=d;
-    id=7;
-  }
-  if((d=spheres[6].intersect(r)) && d<t){
-    t=d;
-    id=6;
-  }
-  if((d=spheres[5].intersect(r)) && d<t){
-    t=d;
-    id=5;
-  }
-  if((d=spheres[4].intersect(r)) && d<t){
-    t=d;
-    id=4;
-  }
-  if((d=spheres[3].intersect(r)) && d<t){
-    t=d;
-    id=3;
-  }
-
-  if((d=spheres[2].intersect(r)) && d<t){
-    t=d;
-    id=2;
-  }
-
-  if((d=spheres[1].intersect(r)) && d<t){
-    t=d;
-    id=1;
-  }
-
-  if((d=spheres[0].intersect(r)) && d<t){
-    t=d;
-    id=0;
-  }
-
+  float n=num_spheres, d, inf=t=1e20;
+  for(int i=int(n);i--;) if((d=spheres[i].intersect(r))&&d<t){t=d;id=i;}
   return t<inf;
 }
 __device__ Vec radiance(const int num_spheres, const Sphere* spheres, const Ray _r, int _depth, curandState* state){
@@ -179,25 +182,25 @@ __global__ void render(const int num_spheres, const Sphere* spheres, Vec* c, int
   }
 }
 int main(int argc, char *argv[]){
-  int w=1024, h=768, samps = argc==2 ? atoi(argv[1])/4 : 1; // # samples
-
+  int w=1024, h=768, samps = argc >= 2 ? atoi(argv[1])/4 : 1; // # samples
+  const char *filename = argc == 3 ? argv[2] : "input.txt";
+  readFromFile(filename);
   timer_start("Getting GPU Data."); //@@ start a timer
   // CUDA memory allocation
   Sphere *spheres;
   Vec *h_c=new Vec[w*h];
   Vec *c;
-  int num_spheres = sizeof(h_spheres)/sizeof(Sphere);
   
   cudaMalloc((void **)&c, w*h*sizeof(Vec));
   cudaMalloc((void **)&spheres, sizeof(h_spheres));
 
   cudaMemset(c, 0, w*h*sizeof(Vec));
-  cudaMemcpy(spheres, &h_spheres, sizeof(h_spheres), cudaMemcpyHostToDevice);
+  cudaMemcpy(spheres, &h_spheres, numOfSpheres * sizeof(Sphere), cudaMemcpyHostToDevice);
 
   dim3 dimGrid(ceil((1.0*w)/32), ceil((1.0*h)/16), 1);
   dim3 dimBlock(32, 16, 1);
   
-  render<<<dimGrid, dimBlock>>>(num_spheres, spheres, c, samps);
+  render<<<dimGrid, dimBlock>>>(numOfSpheres, spheres, c, samps);
   cudaMemcpy(h_c, c, w*h*sizeof(Vec), cudaMemcpyDeviceToHost);
 
   cudaFree(c);

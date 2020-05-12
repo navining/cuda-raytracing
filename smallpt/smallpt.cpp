@@ -1,8 +1,9 @@
 #include <math.h>    // smallpt, a Path Tracer by Kevin Beason, 2008
 #include <stdio.h>   //        Remove "-fopenmp" for g++ version < 4.2
 #include <stdlib.h>  // Make : g++ -O3 -fopenmp smallpt.cpp -o smallpt
-struct Vec {         // Usage: time ./smallpt 5000 && xv image.ppm
-  double x, y, z;    // position, also color (r,g,b)
+#include <string.h>
+struct Vec {       // Usage: time ./smallpt 5000 && xv image.ppm
+  double x, y, z;  // position, also color (r,g,b)
 
   Vec(double x_ = 0, double y_ = 0, double z_ = 0) {
     x = x_;
@@ -41,7 +42,7 @@ struct Sphere {
   double rad;   // radius
   Vec p, e, c;  // position, emission, color
   Refl_t refl;  // reflection type (DIFFuse, SPECular, REFRactive)
-
+  Sphere() {}
   Sphere(double rad_, Vec p_, Vec e_, Vec c_, Refl_t refl_)
       : rad(rad_), p(p_), e(e_), c(c_), refl(refl_) {}
 
@@ -58,29 +59,67 @@ struct Sphere {
   }
 };
 
-Sphere spheres[] = {
-    // Scene: radius, position, emission, color, material
-    Sphere(1e5, Vec(1e5 + 1, 40.8, 81.6), Vec(), Vec(.75, .25, .25),
-           DIFF),  // Left
-    Sphere(1e5, Vec(-1e5 + 99, 40.8, 81.6), Vec(), Vec(.25, .25, .75),
-           DIFF),                                                      // Rght
-    Sphere(1e5, Vec(50, 40.8, 1e5), Vec(), Vec(.75, .75, .75), DIFF),  // Back
-    Sphere(1e5, Vec(50, 40.8, -1e5 + 170), Vec(), Vec(), DIFF),        // Frnt
-    Sphere(1e5, Vec(50, 1e5, 81.6), Vec(), Vec(.75, .75, .75), DIFF),  // Botm
-    Sphere(1e5, Vec(50, -1e5 + 81.6, 81.6), Vec(), Vec(.75, .75, .75),
-           DIFF),                                                       // Top
-    Sphere(16.5, Vec(27, 16.5, 47), Vec(), Vec(1, 1, 1) * .999, SPEC),  // Mirr
-    Sphere(16.5, Vec(73, 16.5, 78), Vec(), Vec(1, 1, 1) * .999, REFR),  // Glas
-    Sphere(600, Vec(50, 681.6 - .27, 81.6), Vec(12, 12, 12), Vec(),
-           DIFF)  // Lite
-};
+#define MAX_SPHERES 16
+Sphere spheres[MAX_SPHERES];
+int numOfSpheres = 0;
+
+void readFromFile(const char *input) {
+  FILE *fp;
+  if ((fp = fopen(input, "r")) == NULL) {
+    fprintf(stderr, "Fail to read from %s: No such file!\n", input);
+    exit(1);
+  }
+  char buf[256];
+  int len;
+  char *p;
+  double t[11];
+  int j = 0;
+  try {
+    while (fgets(buf, 256, fp) != NULL) {
+      int i = 0;
+
+      len = strlen(buf);
+      buf[len - 1] = '\0';
+      p = strtok(buf, ", ");
+      while (p != NULL && i < 11) {
+        if (i != 10) {
+          t[i] = atof(p);
+        } else {
+          if (strcmp(p, "DIFF") == 0) {
+            t[i] = DIFF;
+          } else if (strcmp(p, "SPEC") == 0) {
+            t[i] = SPEC;
+          } else if (strcmp(p, "REFR") == 0) {
+            t[i] = REFR;
+          } else {
+            throw;
+          }
+        }
+        p = strtok(NULL, ", ");
+        i++;
+      }
+      if (i < 11) throw;
+      if (numOfSpheres >= 16)
+        printf("Number of spheres exceeds the limit! MAX_SPHERES: %d\n",
+               MAX_SPHERES);
+      spheres[j] = Sphere(t[0], Vec(t[1], t[2], t[3]), Vec(t[4], t[5], t[6]),
+                          Vec(t[7], t[8], t[9]), (Refl_t)t[10]);
+      j++;
+      numOfSpheres++;
+    }
+
+  } catch (...) {
+    printf("Fail to read from %s: Invalid syntax!\n", input);
+    exit(1);
+  }
+}
 
 inline double clamp(double x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
 inline int toInt(double x) { return int(pow(clamp(x), 1 / 2.2) * 255 + .5); }
 
 inline bool intersect(const Ray &r, double &t, int &id) {
-  double n = sizeof(spheres) / sizeof(Sphere), d, inf = t = 1e20;
+  double n = numOfSpheres, d, inf = t = 1e20;
 
   for (int i = int(n); i--;)
     if ((d = spheres[i].intersect(r)) && d < t) {
@@ -143,10 +182,12 @@ Vec radiance(const Ray &r, int depth, unsigned short *Xi) {
 
 int main(int argc, char *argv[]) {
   int w = 1024, h = 768,
-      samps = argc == 2 ? atoi(argv[1]) / 4 : 1;              // # samples
+      samps = argc >= 2 ? atoi(argv[1]) / 4 : 1;              // # samples
   Ray cam(Vec(50, 52, 295.6), Vec(0, -0.042612, -1).norm());  // cam pos, dir
   Vec cx = Vec(w * .5135 / h), cy = (cx % cam.d).norm() * .5135, r,
       *c = new Vec[w * h];
+  const char *filename = argc == 3 ? argv[2] : "input.txt";
+  readFromFile(filename);
 
 #pragma omp parallel for schedule(dynamic, 1) private(r)  // OpenMP
   for (int y = 0; y < h; y++) {  // Loop over image rows

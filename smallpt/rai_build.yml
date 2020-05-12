@@ -29,9 +29,9 @@ commands:
     # ./time -p -o result.txt --append ./smallpt 1000
     # CUDA version ...
     - echo "run without profiling"
-    - ./time -p -o result.txt --append ./cu_smallpt 1000
+    - ./time -p -o result.txt --append ./cu_smallpt 1000 input.txt
     # Evaluate accelerated version ...
-    - echo "Nsight Compute Results"
-    - nv-nsight-cu-cli --kernel-id ::render:1 --section ".*" -o cu_smallpt cu_smallpt 1000
-    - echo "Nsight Systems Results"
-    - nsys profile -o cu_smallpt cu_smallpt 1000
+    #- echo "Nsight Compute Results"
+    #- nv-nsight-cu-cli --kernel-id ::render:1 --section ".*" -o cu_smallpt cu_smallpt 1000 input.txt
+    #- echo "Nsight Systems Results"
+    #- nsys profile -o cu_smallpt cu_smallpt 1000 input.txt
