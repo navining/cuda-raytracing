@@ -20,7 +20,7 @@ commands:
     #- bash -c "nv-nsight-cu-cli --devices 0 --query-metrics > metrics.txt"
     #- bash -c "nv-nsight-cu-cli --list-sections > sections.txt"
     #- bash -c "nsys status -e 2>&1 > status.txt"    
-    #- /bin/bash -c "cp -r /src/* ."
+    - /bin/bash -c "cp -r /src/* ."
     # Build files
     - make smallpt
     - cmake /src
