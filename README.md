@@ -1,4 +1,4 @@
-# GPU Ray Tracing Acceleration with CUDA
+# GPU Acceleration of Ray Tracing with CUDA
 
 ## Resources
 
