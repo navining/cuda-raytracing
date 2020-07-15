@@ -2,9 +2,9 @@
 
 ## Resources
 
-[**RAI**]([rai-project.github.io/rai](https://rai-project.github.io/rai)): The RAI client allows one to interact with a cluster of machine to submit and evaluate code. 
+[**RAI**](https://rai-project.github.io/rai): The RAI client allows one to interact with a cluster of machine to submit and evaluate code. 
 
-[Nvidia Performance Tools](https://github.com/cwpearson/nvidia-performance-tools#nvidia-performance-tools): NVIDIA Nsight Systems and Nsight Compute
+[**Nvidia Performance Tools**](https://github.com/cwpearson/nvidia-performance-tools#nvidia-performance-tools): NVIDIA Nsight Systems and Nsight Compute
 
 ## Application
 
